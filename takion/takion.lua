@@ -1,6 +1,5 @@
 -- initial wireshark lua dissector for takion udp communication
--- Protobuff parts are not fully dissected - wireshark won't dissect parts nested in bytearray(string) wire
--- use protoc instead, works fine
+-- use one of 128technology/protobuf_dissector forks for working protobuf dissector
 
 local takion = Proto("takion","Gaikai takion protocol")
 local mytype = ProtoField.uint8("takion.type", "Type")
@@ -21,19 +20,16 @@ function takion.dissector(buffer,pinfo,tree)
         subtree = subtree1:add(buffer(1,20),"Video")
         subtree:add(buffer(1,2),"PacketId: " .. buffer(1,2):uint())
         subtree:add(buffer(3,2),"FrameId: " .. buffer(3,2):uint())
-        subtree:add(buffer(5,1),"lonely Byte: " .. buffer(5,1))
 
-        local framepart = buffer(6,1)
-        local partcount = buffer(7,1)
-        subtree:add(framepart,"partNo: " .. framepart:bitfield(0,3) .. "/" .. partcount:bitfield(0,6))
-        subtree:add(framepart,"remainder1: " .. framepart:bitfield(3,5))
-        subtree:add(partcount,"remainder2: " .. partcount:bitfield(6,2))
+        local framepart = buffer(5,2)
+        local partcount = buffer(6,2)
+        subtree:add(framepart,"partNo: " .. framepart:bitfield(0,11) .. "/" .. partcount:bitfield(3,11))
+        subtree:add(partcount,"remainder2: " .. partcount:bitfield(14,2))
         subtree:add(buffer(8,2),"sth: " .. buffer(8,2))
         subtree:add(buffer(10,4),"Crypto: " .. buffer(10,4))
-        local incrementer = buffer(14,3)
-        subtree:add(incrementer,"Sync: " .. incrementer:bitfield(0,20))
-        subtree:add(incrementer,"remainder3: " .. incrementer:bitfield(20,4))
-        subtree:add(buffer(17,4),"Sync?: " .. buffer(17,4))
+        local incrementer = buffer(14,4)
+        subtree:add(incrementer,"TagPos: " .. incrementer)
+        subtree:add(buffer(18,2),"Sync?: " .. buffer(18,4))
 
         pos = 21
     end
@@ -47,12 +43,9 @@ function takion.dissector(buffer,pinfo,tree)
 
         subtree:add(buffer(10,4),"Crypto: " .. buffer(10,4))
 
-        local incrementer = buffer(14,3)
-        subtree:add(incrementer,"Sync: " .. incrementer:bitfield(0,20))
+        local incrementer = buffer(14,4)
+        subtree:add(incrementer,"TagPos: " .. incrementer)
 
-        local sequencer = buffer(17,1)
-            subtree:add(incrementer,"?, ?: " .. incrementer:bitfield(20,4) .. ", " .. sequencer:bitfield(0,4))
-            subtree:add(sequencer,"remainder: " .. sequencer:bitfield(4,4))
         subtree:add(buffer(18,1),"sth: " .. buffer(18,1))
 
         pos = 19
@@ -62,9 +55,8 @@ function takion.dissector(buffer,pinfo,tree)
 	    pinfo.cols.info:set("Feedback (state)")
     	subtree = subtree1:add(buffer(1,7),"Feedback (State)")
     	subtree:add(buffer(1,2),"AckId: " .. buffer(1,2):uint())
-    	subtree:add(buffer(3,2),"Empty: " .. buffer(3,2))
-	    subtree:add(buffer(5,2),"Incr?: " .. buffer(5,2))
-	    subtree:add(buffer(7,1),"byte: " .. buffer(7,1))
+    	subtree:add(buffer(3,1),"Empty: " .. buffer(3,1))
+	    subtree:add(buffer(4,4),"TagPos: " .. buffer(4,4))
 
 	    pos = 8
     end
@@ -76,7 +68,7 @@ function takion.dissector(buffer,pinfo,tree)
         subtree:add(buffer(3,2),"Queue (>> 1?): " .. buffer(3,2))
         subtree:add(buffer(5,2),"Empty " .. buffer(5,2))
         subtree:add(buffer(7,4),"Crypto: " .. buffer(7,4))
-        subtree:add(buffer(11,4),"Packets rcv: " .. buffer(11,4):bitfield(0,28))
+        subtree:add(buffer(11,4),"TagPos: " .. buffer(11,4))
 
         pos = 15
     end
@@ -86,7 +78,7 @@ function takion.dissector(buffer,pinfo,tree)
         subtree = subtree1:add(buffer(1,16),"Control")
         subtree:add(buffer(1,4),"ReceiverId: " .. buffer(1,4))
         subtree:add(buffer(5,4),"Crypoto: " .. buffer(5,4))
-        subtree:add(buffer(9,4),"Incr: " .. (buffer(9,4)))
+        subtree:add(buffer(9,4),"TagPos: " .. (buffer(9,4)))
         subtree:add(buffer(13,1),"Flag1: " .. buffer(13,1))
         subtree:add(buffer(14,1),"ProtoBuffFlag: " .. buffer(14,1))
         subtree:add(buffer(15,2),"PLoad Size: " .. buffer(15,2):uint())
@@ -96,7 +88,7 @@ function takion.dissector(buffer,pinfo,tree)
         end
         if buffer(14,1):uint() == 1 then
             local rawData = buffer(26)
-            local protoDiss = Dissector.get("protobuf")
+            local protoDiss = Dissector.get("gk.takion.proto.takionmessage")
             protoDiss:call(rawData:tvb(), pinfo, subtree1)
 
         end
@@ -106,7 +98,7 @@ function takion.dissector(buffer,pinfo,tree)
     if maintype == 8 then
         pinfo.cols.info:set("Client info")
         local rawData = buffer(1)
-        local protoDiss = Dissector.get("protobuf")
+        local protoDiss = Dissector.get("gk.takion.proto.takionmessage")
         protoDiss:call(rawData:tvb(), pinfo, subtree1)
         pos = buffer:len()
     end
